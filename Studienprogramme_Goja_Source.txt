@@ -1,0 +1,307 @@
+model AufgabeNotensystem {
+
+/*
+Base class for all appraisables and study groups.
+The clonePrototype() is necessary to create for every student
+a clone of an appraisable which contains a reference to
+the MarkHistory for the student.
+*/
+abstract class Prototype {
+	server-only public-write Prototype prototypeObservee;
+	server-only public Prototype ** prototypeObserver;
+	abstract Prototype clonePrototype();
+	void registerProtypeObserver(Prototype observer);
+	void notifyPrototypeObservers();
+	void deregisterPrototypeObserver(Prototype observer);
+	abstract void updatePrototypeObserver();
+}
+
+/*
+Study Group
+*/
+class StudyGroup extends Prototype {
+	prior public String name;
+	public StudentServer ** String ** students;
+	prior public-write StudyProgram assignedTo;
+	void addStudent(StudentServer student);
+}
+
+/*
+Study Program
+*/
+class StudyProgram extends Appr {
+	public ModuleGroup ** moduleGroups;
+	void addModuleGroup(ModuleGroup moduleGroup);
+	void removeModuleGroup(ModuleGroup moduleGroup);
+	extern Boolean isConsistent();
+}
+
+/*
+Module Group
+*/
+class ModuleGroup extends Appr {
+	public ModuleGroup ** moduleGroups hierarchy ModuleGroups;
+	public ModuleWithUnits ** moduleWithUnits hierarchy ModuleGroups;
+	public ModuleWithoutUnits ** moduleWithoutUnits hierarchy ModuleGroups;
+	void addModuleGroup(ModuleGroup moduleGroup) throws CycleException;
+	extern Boolean containsModulGroup(ModuleGroup moduleGroup);
+	void removeModuleGroup(ModuleGroup moduleGroup);
+	void addModuleWithUnits(ModuleWithUnits moduleWithUnits) throws CycleException;
+	void removeModuleWithUnits(ModuleWithUnits moduleWithUnits);
+	void addModuleWithoutUnits(ModuleWithoutUnits moduleWithoutUnits) throws CycleException;
+	void removeModuleWithoutUnits(ModuleWithoutUnits moduleWithoutUnits);
+	extern Boolean isConsistent();
+}
+
+/*
+Module With Units
+*/
+class ModuleWithUnits extends Appr {
+	public Unit ** consistsOf;
+	void addUnit(Unit unit) throws UnitIsAlreadyPartOfAModuleWithUnitsException;
+	void removeUnit(Unit unit);
+	extern Boolean isConsistent();
+}
+
+/*
+Module Without Units
+*/
+class ModuleWithoutUnits extends Appr {
+	server-only prior public Mark markType;
+	void setMark(Mark mark, String comment) throws OtherTypeThanSettedException;
+}
+
+/*
+Unit
+*/
+class Unit extends Appr {
+	void setMark(ThirdMark mark, String comment);
+}
+
+/*
+Appr (Appraisable) is the base class for Unit, ModuleWithtUnit, ModuleWithoutUnit,
+ModuleGroup, StudyProgramm. The class contains all attributes which are shared by
+the Appraisables.
+*/
+abstract class Appr extends Prototype {
+	prior public String name;
+	public MarkHistoryEntry ** markHistory;
+	prior public-write Fraction creditPoints;
+	Mark fetchMark();
+}
+
+/* 
+MarkFactory is in ToString$Visitor used to round the
+fraction value of the fetchMark()-Operation of an appraisable.
+*/
+singleton MarkFactory
+{
+	TenthMark createTenthMark(Fraction f);
+	ThirdMark createThirdMark(Fraction f);
+}
+
+/* 
+MarkHistoryEntry contains the mark, the timestamp and a comment.
+*/
+class MarkHistoryEntry {
+	prior public Mark mark;
+	prior public String comment;
+	prior public Timestamp timestamp;
+}
+
+/*
+Mark is the base class for all marks
+*/
+interface Mark {
+	extern Boolean fetchIsCalculable();
+	String fetchTypeAsString();
+	Fraction fetchMarkValue();
+}
+
+/*
+MarkCalculable are the classes which are used for calculation in fetchMark()
+*/
+abstract class MarkCalculable implements Mark {
+	server-only prior public Fraction value;
+}
+
+/*
+MarkNotCalculable arent used in the fetchMark calculation and do not contain a fraction value.
+*/
+abstract class MarkNotCalculable implements Mark{}
+
+/*
+NoneMark is the value of the initial MarkHistory.
+*/
+class NoneMark extends MarkNotCalculable {}
+
+/*
+BooleanMark can be Passed or Failed
+*/
+string-factory class BooleanMark(Passed, Failed) extends MarkNotCalculable {}
+
+/*
+BooleanMarkLst contains Passed and Failed for the gui mark selection.
+*/
+singleton BooleanMarkLst {
+	public BooleanMark ** booleanMarks;
+}
+
+/*
+ThirdMark with all the assigned ThirdMarkValue classes.
+*/
+string-factory class ThirdMark(OneZero, OneThree, OneSeven, TwoZero, TwoThree, TwoSeven, ThreeZero, ThreeThree, ThreeSeven,FourZero,FiveZero) extends MarkCalculable {}
+
+/*
+ThirdMarkLst contains all gui selectable thirdmark values.
+*/
+singleton ThirdMarkLst {
+	public ThirdMark ** thirdMarks;
+}
+
+/*
+TenthMark
+*/
+class TenthMark extends MarkCalculable {}
+
+/*
+Service
+*/
+abstract server Service{}
+
+/*
+StudentServer is used as Server object for student and as the student object which is referenced in studyGroup.
+*/
+server StudentServer extends Service {
+	prior public String matriculationNumber;
+	prior public String forename;
+	prior public String surname;
+	prior public Date dateOfBirth;
+	public-write String activeStudyGroupName##actStdyGrpN;
+	public StudyGroup ** studyGroupsAttended##stdyGrpsAtt@@StudyGroupsAttended;
+	server-only prior public-write StudyGroup activeStudyGroup@@ActiveStudyGroup;
+	active Mark fetchStudentM@@FetchMark(Appr appr{studyGroupsAttended});
+}
+
+/*
+AdminServer (hugo)
+*/
+server AdminServer extends Service {
+	public UnitLst units;
+	public ModuleWithUnitsLst moduleWithUnits;
+	public ModuleWithoutUnitsLst moduleWithoutUnits;
+	public ModuleGroupLst moduleGroups;
+	public StudyProgramLst studyPrograms;
+	public StudyGroupLst studyGroups;
+	public StudentServerLst students;
+	server-only public Mark ** ModuleWithoutUnitsMarkTypes##MWUMTyps;
+	server-only public ThirdMarkLst thirdMarks;
+	server-only public Anything ** ModuleWithoutUnitsMarks##MWUMarks;
+	active void createUnit@@CreateUnit(String name, Fraction creditPoints) throws NameAlreadyExistsException;
+	active void createMWU@@CreateModuleWithUnits(String name, Fraction creditPoints) throws NameAlreadyExistsException;
+	active void createMWWU@@CreateModuleWithoutUnits(String name, Fraction creditPoints, Mark markType{ModuleWithoutUnitsMarkTypes}) throws NameAlreadyExistsException;
+	active void createModuleGroup@@CreateModuleGroup(String name, Fraction creditPoints) throws NameAlreadyExistsException;
+	active void createStudyProgram@@CreateStudyProgramm(String name, Fraction creditPoints) throws NameAlreadyExistsException;
+	active void createStudyGroup@@CreateStudyGroup(String name, StudyProgram studyProgram{studyPrograms}) throws NameAlreadyExistsException, CreditPointInformationIsNotConsistent;
+	active void createStudent@@CreateStudent(String matricalNumber, String password, String forename, String surname, Date dateOfBirth, StudyGroup studyGroup{studyGroups}) throws MatricalNumberAlreadyUsed, CreditPointInformationIsNotConsistent;
+	active void changeCP@@ChangeCreditPoints(Appr appr, Fraction creditPoints) throws AlreadyInUseException;
+	active void sorcMTSWiU@@SetOrChangeMarkToStudentWithUnit(Unit unit{units}, ThirdMark mark{thirdMarks}, String comment) throws NotAllowedOperationOnPrototypeException;
+	active void sorcMTSWiMWuU@@SetOrChangeMarkToStudentWithModuleWithoutUnits(ModuleWithoutUnits moduleWithoutUnits{moduleWithoutUnits}, Mark mark{ModuleWithoutUnitsMarks}, String comment) throws OtherTypeThanSettedException, NotAllowedOperationOnPrototypeException;
+	active void setActiveSG@@SetActiveStudyGroup(StudentServer student, StudyGroup studyGroup{;student;studyGroupsAttended}) throws NotInStudyGroupException;
+	active void addUToMWU@@AddUnitToModuleWithUnits(ModuleWithUnits moduleWithUnits, Unit unit{units}) throws ThereIsAlreadyAStudyGroupException, UnitIsAlreadyPartOfAModuleWithUnitsException, AlreadyInUseException;
+	active void addMGToMG@@AddModuleGroupToModuleGroup(ModuleGroup moduleGroup, ModuleGroup mG{moduleGroups}) throws CycleException, AlreadyInUseException;
+	active void addMWUToMG@@AddModuleWithUnitsToModuleGroup(ModuleGroup moduleGroup, ModuleWithUnits moduleWithUnits{moduleWithUnits}) throws CycleException, AlreadyInUseException;
+	active void addMWWUToMG@@AddModuleWithoutUnitsToModuleGroup(ModuleGroup moduleGroup, ModuleWithoutUnits moduleWithoutUnits{moduleWithoutUnits}) throws CycleException, AlreadyInUseException;
+	active void addMGToSP@@AddModuleGroupToStudyProgram(StudyProgram studyProgram, ModuleGroup moduleGroup{moduleGroups}) throws AlreadyInUseException;
+	active void addSToSG@@AddStudentToStudyGroup(StudyGroup studyGroup, StudentServer student{students}) throws AlreadyInUseException;
+	active void remUFromMWU@@RemoveUnitFromModuleWithUnits(ModuleWithUnits moduleWithUnits, Unit unit{;moduleWithUnits;consistsOf}) throws AlreadyInUseException;
+	active void remMGFromMG@@RemoveModuleGroupFromModuleGroup(ModuleGroup moduleGroup, ModuleGroup mG{;moduleGroup;moduleGroups}) throws AlreadyInUseException;
+	active void remMWUFromMG@@RemoveModuleWithUnitsFromModuleGroup(ModuleGroup moduleGroup, ModuleWithUnits moduleWithUnits{;moduleGroup;moduleWithUnits}) throws AlreadyInUseException;
+	active void remMWWUFromMG@@RemoveModuleWithoutUnitsFromModuleGroup(ModuleGroup moduleGroup, ModuleWithoutUnits moduleWithoutUnits{;moduleGroup;moduleWithoutUnits}) throws AlreadyInUseException;
+	active void remMGFromSP@@RemoveModuleGroupFromStudyProgram(StudyProgram studyProgram, ModuleGroup moduleGroup{;studyProgram;moduleGroups}) throws AlreadyInUseException;
+	active Mark fetchM@@FetchMark(Appr appr) throws NotAllowedOperationOnPrototypeException;
+	active void removeUnit@@RemoveUnit(Unit unit) throws AlreadyInUseException, UnitIsAlreadyPartOfAModuleWithUnitsException;
+	active void rmvMWOU@@RemoveModuleWithoutUnits(ModuleWithoutUnits moduleWithoutUnits) throws AlreadyInUseException;
+	active void rmvMWU@@RemoveModuleWithUnits(ModuleWithUnits moduleWithUnits) throws AlreadyInUseException;
+	active void removeModuleGroup@@RemoveModuleGroup(ModuleGroup moduleGroup) throws AlreadyInUseException;
+	active void removeStudyProgram@@RemoveStudyProgram(StudyProgram studyProgram) throws AlreadyInUseException;
+	active void removeStudyGroup@@RemoveStudyGroup(StudyGroup studyGroup) throws AlreadyInUseException;
+}
+
+/*
+Server
+*/
+server Server {
+	public Service ** services;
+}
+
+/*
+UnitLst contains all unit prototypes.
+*/
+singleton UnitLst {
+	public Unit ** units;
+}
+
+/*
+ModuleWithUnitsLst contains all moduleWithUnits prototypes.
+*/
+singleton ModuleWithUnitsLst##MWULst {
+	public ModuleWithUnits ** moduleWithUnits;
+}
+
+/*
+ModuleWithoutUnitsLst contains all moduleWithoutUnits prototypes.
+*/
+singleton ModuleWithoutUnitsLst##MWUOLst {
+	public ModuleWithoutUnits ** moduleWithoutUnits;
+}
+
+/*
+ModuleGroupLst contains all moduleGroups prototypes.
+*/
+singleton ModuleGroupLst {
+	public ModuleGroup ** moduleGroups;
+}
+
+/*
+StudyProgramLst contains all studyPrograms prototypes.
+*/
+singleton StudyProgramLst {
+	public StudyProgram ** studyPrograms;
+}
+
+/*
+StudyGroupLst contains all studyGroups prototypes.
+*/
+singleton StudyGroupLst {
+	public StudyGroup ** studyGroups;
+}
+
+/*
+StudentServerLst contains all studentServers.
+*/
+singleton StudentServerLst##StdntSrvLst {
+	public StudentServer ** String ** studentServers;
+}
+
+/*
+hierarchy ModuleGroups is used to prevent a cycles.
+*/
+hierarchy ModuleGroups;
+
+
+/*
+Exceptions
+*/
+exception NameAlreadyExistsException {}
+exception ThereIsAlreadyAStudyGroupException {}
+exception NotInStudyGroupException {}
+exception StudyGroupAlreadyInStudyProgramException {}
+exception UnitIsAlreadyPartOfAModuleWithUnitsException {}
+exception OtherTypeThanSettedException {}
+exception NotAllowedOperationOnPrototypeException {}
+exception AlreadyInUseException {}
+exception MatricalNumberAlreadyUsed {}
+exception CreditPointInformationIsNotConsistent {}
+
+}
